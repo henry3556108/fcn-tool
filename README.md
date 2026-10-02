@@ -80,3 +80,9 @@ FCN 的三個價位都以**期初價（定價日收盤）= 100%** 為基準：
 ## 授權
 
 程式碼採 MIT 授權。內嵌之股價資料版權屬原資料提供者所有。
+
+---
+
+## 研究報告：FCN 流派與歷史回測
+
+見 [`research/REPORT.md`](research/REPORT.md)（假設 → 實驗 → 檢討、損益兩平 α、梯隊回撤、報價檢查器 `research/quote_check.py`）。
