@@ -1,0 +1,21 @@
+findfont: Failed to find font weight normal for WenQuanYi Zen Hei, now using 500.
+findfont: Failed to find font weight normal for WenQuanYi Zen Hei, now using 500.
+findfont: Failed to find font weight normal for WenQuanYi Zen Hei, now using 500.
+findfont: Failed to find font weight normal for WenQuanYi Zen Hei, now using 500.
+findfont: Failed to find font weight normal for WenQuanYi Zen Hei, now using 500.
+      basket  scen  ...  12M 無KO KI70A K100  12M 無KO KI60E K80
+0        TSM  erp0  ...                0.88               0.91
+1        TSM  erp6  ...                0.79               0.87
+2        TSM  asis  ...                0.66               0.79
+3   NVDA+TSM  erp0  ...                0.99               1.06
+4   NVDA+TSM  erp6  ...                0.90               1.02
+5   NVDA+TSM  asis  ...                0.58               0.76
+6       NVDA  erp0  ...                1.12               1.16
+7       NVDA  erp6  ...                1.03               1.10
+8       NVDA  asis  ...                0.64               0.80
+9        SPY  erp0  ...                1.18               1.28
+10       SPY  erp6  ...                1.09               1.18
+11       SPY  asis  ...                1.09               1.18
+
+[12 rows x 7 columns]
+{'date': Timestamp('2023-01-12 00:00:00'), 'ret': 0.031017909228628498} {'date': Timestamp('2002-02-05 00:00:00'), 'ret': -0.5909555886189775}

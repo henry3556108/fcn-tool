@@ -1,3 +1,5 @@
 build.log
 __pycache__/
 nohup.out
+prices.csv
+*.parquet
