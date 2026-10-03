@@ -1,0 +1,132 @@
+//@version=6
+// FCN 條款標記：把一張 FCN 的 KO / 轉換價 / KI、月度觀察日、觸發事件與到期結果直接畫在 K 線上。
+// 用法：TradingView → Pine 編輯器 → 貼上 → 加到圖表（請用「日線」）。主圖 = 第 1 檔標的，第 2、3 檔填在設定裡。
+// 規則與 research/fcn_engine.py 相同：worst-of、KO 月度觀察、AKI 每日觀察 / EKI 只看到期、觸發且期末 < 轉換價才轉股。
+indicator("FCN 條款標記", overlay = true, max_labels_count = 200, max_lines_count = 50)
+
+// ───────── 條款輸入 ─────────
+entryTime = input.time(timestamp("02 Jan 2025 00:00 +0000"),"進場日（定價日）", group = "條款")
+tenorM    = input.int(6, "天期（月）", minval = 1, maxval = 36, group = "條款")
+useKO     = input.bool(true, "有 KO（提前贖回）", group = "條款")
+koPct     = input.float(100.0, "KO %", step = 1, group = "條款")
+strikePct = input.float(100.0, "轉換價 %", step = 1, group = "條款")
+kiPct     = input.float(65.0, "KI（下限價）%", step = 1, group = "條款")
+kiType    = input.string("AKI", "KI 型態", options = ["AKI", "EKI"], group = "條款", tooltip = "AKI：存續期間任一天跌破即觸發；EKI：只看到期日")
+akiLow    = input.bool(false, "AKI 用盤中低點（否則用收盤）", group = "條款")
+cpnPa     = input.float(20.0, "年化配息 %", step = 0.5, group = "條款")
+sym2      = input.symbol("", "第 2 檔標的（worst-of，可留白）", group = "籃子")
+sym3      = input.symbol("", "第 3 檔標的（可留白）", group = "籃子")
+showReg   = input.bool(true, "顯示波動狀態底色（回測結論）", group = "顯示")
+showMA    = input.bool(true, "顯示 200 日均線", group = "顯示")
+
+// ───────── 工具 ─────────
+f_addMonths(int t, int k) =>
+    int m0 = month(t) - 1 + k
+    int y  = year(t) + int(math.floor(m0 / 12.0))
+    int m  = m0 % 12 + 1
+    timestamp(syminfo.timezone, y, m, math.min(dayofmonth(t), 28), 0, 0)
+
+f_pct(float x) => str.tostring(x * 100, "#.0") + "%"
+
+string s2 = sym2 == "" ? syminfo.tickerid : sym2
+string s3 = sym3 == "" ? syminfo.tickerid : sym3
+float c2 = request.security(s2, timeframe.period, close)
+float c3 = request.security(s3, timeframe.period, close)
+float l2 = request.security(s2, timeframe.period, low)
+float l3 = request.security(s3, timeframe.period, low)
+
+int matT = f_addMonths(entryTime, tenorM)
+float ko = koPct / 100
+float ki = kiPct / 100
+float kk = strikePct / 100
+
+// ───────── 狀態 ─────────
+var float p1 = na
+var float p2 = na
+var float p3 = na
+var int   state = 0          // 0 未進場 / 1 存續中 / 2 已 KO / 3 已到期
+var bool  kiHit = false
+var int   k = 1
+var int   coupons = 0
+var float princ = na
+var string result = "尚未進場"
+
+C_KO = color.new(#2a9d8f, 0)
+C_K  = color.new(#264653, 0)
+C_KI = color.new(#e76f51, 0)
+
+r1 = close / p1
+r2 = c2 / p2
+r3 = c3 / p3
+float w  = math.min(r1, math.min(r2, r3))
+float wl = akiLow ? math.min(low / p1, math.min(l2 / p2, l3 / p3)) : w
+string worstName = r1 <= r2 and r1 <= r3 ? syminfo.ticker : r2 <= r3 ? s2 : s3
+
+if state == 0 and time >= entryTime
+    p1 := close
+    p2 := c2
+    p3 := c3
+    state := 1
+    result := "存續中"
+    label.new(bar_index, low, "進場\n期初價 " + str.tostring(close, format.mintick), style = label.style_label_up, color = color.gray, textcolor = color.white, size = size.small)
+    if useKO
+        line.new(entryTime, close * ko, matT, close * ko, xloc = xloc.bar_time, color = C_KO, style = line.style_dashed, width = 2)
+        label.new(matT, close * ko, "KO " + str.tostring(koPct) + "%", xloc = xloc.bar_time, style = label.style_label_left, color = C_KO, textcolor = color.white, size = size.small)
+    line.new(entryTime, close * kk, matT, close * kk, xloc = xloc.bar_time, color = C_K, style = line.style_dotted, width = 2)
+    label.new(matT, close * kk, "轉換價 " + str.tostring(strikePct) + "%", xloc = xloc.bar_time, style = label.style_label_left, color = C_K, textcolor = color.white, size = size.small)
+    line.new(entryTime, close * ki, matT, close * ki, xloc = xloc.bar_time, color = C_KI, style = line.style_dashed, width = 2)
+    label.new(matT, close * ki, "KI " + str.tostring(kiPct) + "% (" + kiType + ")", xloc = xloc.bar_time, style = label.style_label_left, color = C_KI, textcolor = color.white, size = size.small)
+    line.new(matT, close * ki * 0.9, matT, close * ko * 1.05, xloc = xloc.bar_time, color = color.gray, style = line.style_dotted)
+else if state == 1
+    // AKI：每日檢查
+    if kiType == "AKI" and not kiHit and wl <= ki
+        kiHit := true
+        label.new(bar_index, high, "⚠ KI 觸發\n" + worstName + " " + f_pct(wl), style = label.style_label_down, color = C_KI, textcolor = color.white, size = size.small)
+    // 月度觀察日（遇假日順延到下一根 K 棒）
+    if k <= tenorM and time >= f_addMonths(entryTime, k)
+        coupons += 1
+        bool koNow = useKO and w >= ko
+        label.new(bar_index, low, str.tostring(k), style = label.style_circle, color = koNow ? C_KO : w <= ki ? C_KI : color.new(color.gray, 30), textcolor = color.white, size = size.tiny, tooltip = "第 " + str.tostring(k) + " 次觀察：最差 " + worstName + " " + f_pct(w))
+        if koNow
+            state := 2
+            princ := 1.0
+            result := "第 " + str.tostring(k) + " 月 KO：拿回本金"
+            label.new(bar_index, high, "✓ KO 提前贖回\n第 " + str.tostring(k) + " 月\n報酬 " + f_pct(cpnPa / 1200 * coupons), style = label.style_label_down, color = C_KO, textcolor = color.white)
+        else if k == tenorM
+            bool breached = kiType == "AKI" ? kiHit : w <= ki
+            bool conv = breached and w < kk
+            princ := conv ? w / kk : 1.0
+            state := 3
+            float tot = princ - 1 + cpnPa / 1200 * coupons
+            result := conv ? "到期轉股：以轉換價接 " + worstName : "到期：拿回本金"
+            label.new(bar_index, conv ? low : high, (conv ? "✗ 轉股 " + worstName + "\n本金 " + f_pct(princ - 1) : "✓ 到期還本") + "\n含配息總報酬 " + f_pct(tot), style = conv ? label.style_label_up : label.style_label_down, color = conv ? C_KI : C_KO, textcolor = color.white)
+        k += 1
+
+// ───────── 波動狀態（研究結論：σ20/σ250 < 0.9 進場略佳；> 1.2 是回測最差進場時機）─────────
+float lr = math.log(close / close[1])
+float vr = ta.stdev(lr, 20) / ta.stdev(lr, 250)
+bgcolor(showReg and vr < 0.9 ? color.new(color.green, 93) : showReg and vr > 1.2 ? color.new(color.red, 90) : na)
+plot(showMA ? ta.sma(close, 200) : na, "200MA", color = color.new(color.orange, 40))
+
+// ───────── 狀態表 ─────────
+var table tb = table.new(position.top_right, 2, 9, bgcolor = color.new(color.black, 15), border_width = 1)
+if barstate.islast
+    float live = state == 1 ? w : na
+    table.cell(tb, 0, 0, "狀態", text_color = color.white)
+    table.cell(tb, 1, 0, result, text_color = color.white)
+    table.cell(tb, 0, 1, "最差標的", text_color = color.white)
+    table.cell(tb, 1, 1, state >= 1 ? worstName : "-", text_color = color.white)
+    table.cell(tb, 0, 2, "最差 / 期初", text_color = color.white)
+    table.cell(tb, 1, 2, state == 1 ? f_pct(live) : "-", text_color = color.white)
+    table.cell(tb, 0, 3, "距 KI", text_color = color.white)
+    table.cell(tb, 1, 3, state == 1 ? f_pct(live / ki - 1) : "-", text_color = state == 1 and live / ki - 1 < 0.1 ? C_KI : color.white)
+    table.cell(tb, 0, 4, "距 KO", text_color = color.white)
+    table.cell(tb, 1, 4, state == 1 and useKO ? f_pct(ko / live - 1) : "-", text_color = color.white)
+    table.cell(tb, 0, 5, "KI 已觸發", text_color = color.white)
+    table.cell(tb, 1, 5, kiType == "EKI" ? "EKI 到期才看" : kiHit ? "是 ⚠" : "否", text_color = kiHit ? C_KI : color.white)
+    table.cell(tb, 0, 6, "已領配息", text_color = color.white)
+    table.cell(tb, 1, 6, str.tostring(coupons) + " 期 / " + f_pct(cpnPa / 1200 * coupons), text_color = color.white)
+    table.cell(tb, 0, 7, "σ20/σ250", text_color = color.white)
+    table.cell(tb, 1, 7, str.tostring(vr, "#.00") + (vr < 0.9 ? " 低波動" : vr > 1.2 ? " 波動飆升⚠" : ""), text_color = color.white)
+    table.cell(tb, 0, 8, "到期日", text_color = color.white)
+    table.cell(tb, 1, 8, str.format_time(matT, "yyyy-MM-dd", syminfo.timezone), text_color = color.white)
